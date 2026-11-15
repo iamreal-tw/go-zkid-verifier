@@ -70,7 +70,8 @@ func linkVerify(service *linkverify.Service) http.HandlerFunc {
 			case linkverify.ReasonSmtRootMismatch,
 				linkverify.ReasonIssuerModulusMismatch,
 				linkverify.ReasonAppIDMismatch,
-				linkverify.ReasonChallengeMismatch:
+				linkverify.ReasonChallengeMismatch,
+				linkverify.ReasonCurrentTimeOutOfRange:
 				status = http.StatusConflict
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -82,6 +83,7 @@ func linkVerify(service *linkverify.Service) http.HandlerFunc {
 				IssuerModulus: result.IssuerModulus,
 				AppID:         result.AppID,
 				Challenge:     result.Challenge,
+				CurrentTime:   result.CurrentTime,
 			})
 			return
 		}
@@ -101,6 +103,7 @@ func linkVerify(service *linkverify.Service) http.HandlerFunc {
 			IssuerModulus: result.IssuerModulus,
 			AppID:         result.AppID,
 			Challenge:     result.Challenge,
+			CurrentTime:   result.CurrentTime,
 		})
 	}
 }

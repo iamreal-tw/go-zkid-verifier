@@ -13,4 +13,5 @@ const (
 	ReasonIssuerModulusMismatch = "issuer_modulus_mismatch"
 	ReasonAppIDMismatch         = "app_id_mismatch"
 	ReasonChallengeMismatch     = "challenge_mismatch"
+	ReasonCurrentTimeOutOfRange = "current_time_out_of_range"
 )

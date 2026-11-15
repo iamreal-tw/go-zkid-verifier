@@ -13,10 +13,10 @@ crate-type = ["staticlib", "cdylib"]
 proof-e2e = ["openac-mobile-app"]
 
 [dependencies]
-ecdsa-spartan2 = { git = "https://github.com/privacy-ethereum/zkID.git", branch = "RSA-X.509-Cert" }
+ecdsa-spartan2 = { git = "https://github.com/iamreal-tw/zkID.git", rev = "85b8156d65b2ed131c48f9c3f21566d00d2c1330" }
 ff = "0.13"
 subtle = "2"
-openac-mobile-app = { git = "https://github.com/privacy-ethereum/zkID.git", branch = "RSA-X.509-Cert", optional = true, default-features = false, features = [
+openac-mobile-app = { git = "https://github.com/iamreal-tw/zkID.git", rev = "85b8156d65b2ed131c48f9c3f21566d00d2c1330", optional = true, default-features = false, features = [
     "mobile",
 ] }
 

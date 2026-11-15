@@ -4,19 +4,21 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 )
 
 const AppIDLen = 31
 
-// cert_chain RS2048 layout: [pk_commit, issuer_modulus[17], smt_root].
+// cert_chain RS2048 layout: [pk_commit, issuer_modulus[17], smt_root, current_time].
 type CertChainRS2048PublicInputs struct {
 	PkCommit         string
 	IssuerRSAModulus []string
 	SmtRoot          string
+	CurrentTime      string
 }
 
 func ParseCertChainRS2048(signals []string) (*CertChainRS2048PublicInputs, error) {
-	const required = 19
+	const required = 20
 	if len(signals) != required {
 		return nil, fmt.Errorf("cert_chain RS2048 requires exactly %d public inputs, got %d", required, len(signals))
 	}
@@ -24,18 +26,20 @@ func ParseCertChainRS2048(signals []string) (*CertChainRS2048PublicInputs, error
 		PkCommit:         signals[0],
 		IssuerRSAModulus: signals[1:18],
 		SmtRoot:          signals[18],
+		CurrentTime:      signals[19],
 	}, nil
 }
 
-// cert_chain RS4096 layout: [pk_commit, issuer_modulus[34], smt_root].
+// cert_chain RS4096 layout: [pk_commit, issuer_modulus[34], smt_root, current_time].
 type CertChainRS4096PublicInputs struct {
 	PkCommit         string
 	IssuerRSAModulus []string
 	SmtRoot          string
+	CurrentTime      string
 }
 
 func ParseCertChainRS4096(signals []string) (*CertChainRS4096PublicInputs, error) {
-	const required = 36
+	const required = 37
 	if len(signals) != required {
 		return nil, fmt.Errorf("cert_chain RS4096 requires exactly %d public inputs, got %d", required, len(signals))
 	}
@@ -43,6 +47,7 @@ func ParseCertChainRS4096(signals []string) (*CertChainRS4096PublicInputs, error
 		PkCommit:         signals[0],
 		IssuerRSAModulus: signals[1:35],
 		SmtRoot:          signals[35],
+		CurrentTime:      signals[36],
 	}, nil
 }
 
@@ -84,6 +89,32 @@ func NormalizeDecimal(s string) (string, error) {
 		return "", fmt.Errorf("invalid hex field element %q", s)
 	}
 	return n.String(), nil
+}
+
+// maxCurrentTime is the largest value `YYMMDDHHMMSS` can take.
+var maxCurrentTime = big.NewInt(991231235959)
+
+// ParseCurrentTime decodes the cert-chain circuit's `currentTime` public value:
+// the decimal integer `YYMMDDHHMMSS`, read as a UTC instant in 20YY. The
+// circuit compares this value against the certificate's notBefore / notAfter;
+// the caller must check it against its own clock.
+func ParseCurrentTime(signal string) (time.Time, error) {
+	dec, err := NormalizeDecimal(signal)
+	if err != nil {
+		return time.Time{}, err
+	}
+	n, ok := new(big.Int).SetString(dec, 10)
+	if !ok || n.Sign() < 0 || n.Cmp(maxCurrentTime) > 0 {
+		return time.Time{}, fmt.Errorf("current_time %q is not a YYMMDDHHMMSS value", signal)
+	}
+	digits := fmt.Sprintf("%012d", n.Int64())
+	// time.Parse rejects out-of-range fields (month 13, day 31 in a 30-day
+	// month, hour 24) rather than normalising them.
+	t, err := time.Parse("20060102150405", "20"+digits)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("current_time %q is not a YYMMDDHHMMSS value: %w", signal, err)
+	}
+	return t, nil
 }
 
 // PackAppIDLE encodes 31 bytes as a little-endian field-element decimal
@@ -139,6 +170,7 @@ type ParsedInputs struct {
 	Challenge        string   `json:"challenge"`
 	IssuerRSAModulus []string `json:"issuer_rsa_modulus"`
 	SmtRoot          string   `json:"smt_root"`
+	CurrentTime      string   `json:"current_time"`
 }
 
 func ParsePublicInputsRS2048(certChain, userSig []string) (*ParsedInputs, error) {
@@ -162,6 +194,7 @@ func ParsePublicInputsRS2048(certChain, userSig []string) (*ParsedInputs, error)
 		Challenge:        ds.Challenge,
 		IssuerRSAModulus: cc.IssuerRSAModulus,
 		SmtRoot:          cc.SmtRoot,
+		CurrentTime:      cc.CurrentTime,
 	}, nil
 }
 
@@ -186,6 +219,7 @@ func ParsePublicInputsRS4096(certChain, userSig []string) (*ParsedInputs, error)
 		Challenge:        ds.Challenge,
 		IssuerRSAModulus: cc.IssuerRSAModulus,
 		SmtRoot:          cc.SmtRoot,
+		CurrentTime:      cc.CurrentTime,
 	}, nil
 }
 

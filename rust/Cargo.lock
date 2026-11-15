@@ -874,13 +874,14 @@ dependencies = [
 [[package]]
 name = "ecdsa-spartan2"
 version = "0.0.1"
-source = "git+https://github.com/privacy-ethereum/zkID.git?branch=RSA-X.509-Cert#36bcdd4529e89e9d4828ea81f333797b58a85797"
+source = "git+https://github.com/iamreal-tw/zkID.git?rev=85b8156d65b2ed131c48f9c3f21566d00d2c1330#85b8156d65b2ed131c48f9c3f21566d00d2c1330"
 dependencies = [
  "anyhow",
  "base64",
  "bellpepper",
  "bellpepper-core",
  "bincode",
+ "cc",
  "chkstk_stub",
  "circom-scotia",
  "const-oid",
@@ -1875,9 +1876,9 @@ dependencies = [
 
 [[package]]
 name = "mopro-ffi"
-version = "0.3.5"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ba8b11b3ca5311830103bbef75ae5c8b5f5f5e37c40e42a628a02c550d0c733"
+checksum = "89db33add5352d6047eb2736d1861d74b92cf8dea2edce4fe776ebefaee31fca"
 dependencies = [
  "anyhow",
  "camino",
@@ -1995,7 +1996,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "openac-mobile-app"
 version = "0.1.0"
-source = "git+https://github.com/privacy-ethereum/zkID.git?branch=RSA-X.509-Cert#36bcdd4529e89e9d4828ea81f333797b58a85797"
+source = "git+https://github.com/iamreal-tw/zkID.git?rev=85b8156d65b2ed131c48f9c3f21566d00d2c1330#85b8156d65b2ed131c48f9c3f21566d00d2c1330"
 dependencies = [
  "anyhow",
  "bellpepper",
@@ -4376,7 +4377,7 @@ dependencies = [
 [[package]]
 name = "zkid-input-builder"
 version = "0.1.0"
-source = "git+https://github.com/privacy-ethereum/zkID.git?branch=RSA-X.509-Cert#36bcdd4529e89e9d4828ea81f333797b58a85797"
+source = "git+https://github.com/iamreal-tw/zkID.git?rev=85b8156d65b2ed131c48f9c3f21566d00d2c1330#85b8156d65b2ed131c48f9c3f21566d00d2c1330"
 dependencies = [
  "base64",
  "der",

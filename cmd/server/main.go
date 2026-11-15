@@ -95,6 +95,8 @@ func main() {
 		IssuerCert:          issuerProvider,
 		ExpectedAppID: appID,
 		Logger:              smtroot.DefaultLogger{},
+		CurrentTimeMaxAge:   envDuration("CURRENT_TIME_MAX_AGE", linkverify.DefaultCurrentTimeMaxAge),
+		CurrentTimeMaxAhead: envDuration("CURRENT_TIME_MAX_AHEAD", linkverify.DefaultCurrentTimeMaxAhead),
 	}
 	if provider != nil {
 		provider.Start(ctx)

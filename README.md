@@ -1,14 +1,17 @@
 # go-zkid-verifier
 
+> **Fork note.** This branch tracks the [`validity-check` branch of iamreal-tw/zkID](https://github.com/iamreal-tw/zkID/tree/validity-check), whose cert-chain circuit takes one more public input, `currentTime`, and proves the certificate is inside its validity period at that time. Proofs and verifying keys from upstream `RSA-X.509-Cert` are not accepted here. The CI workflows still point at the upstream release and have not been adapted.
+
 A Go server that issues challenges and verifies zero-knowledge proofs of Taiwan CDC card identity, over REST and gRPC. Proofs come from the [zkID](https://github.com/privacy-ethereum/zkID/tree/RSA-X.509-Cert) circuits on top of [Spartan2](https://github.com/therealyingtong/Spartan2.git) with Hyrax commitments.
 
-Every `/link-verify` call checks one cert-chain proof (RSA-2048 or RSA-4096) plus one user-signature proof (RSA-2048) and enforces five things server-side:
+Every `/link-verify` call checks one cert-chain proof (RSA-2048 or RSA-4096) plus one user-signature proof (RSA-2048) and enforces six things server-side:
 
 1. The FFI accepts both proofs and their `pk_commit` linkage holds.
 2. The `smt_root` public input matches the current revocation-list root for the issuer ([moica-revocation-smt](https://github.com/privacy-ethereum/moica-revocation-smt)).
 3. The `issuer_rsa_modulus` public input matches the RSA modulus of the published MOICA-G2 (RS2048) or MOICA-G3 (RS4096) certificate — i.e. the proof was actually signed by MOICA, not an impostor.
 4. The `app_id` reconstructed from user_sig public values matches the configured `APP_ID` env value (constant-time compare). The prover signs `APP_ID`; the resulting RSA signature derives the cardholder-bound `nullifier` inside the same circuit.
 5. The per-session `challenge` bound into the user-sig proof matches the value `/challenge` issued. The binding is a Semaphore-style dummy square (`challengeSquared <== challenge * challenge`) — see [PR#60 follow-on](https://github.com/zkmopro/zkID/pull/60). Stops replay of pre-generated proofs across sessions.
+6. The `current_time` public input of the cert-chain proof (`YYMMDDHHMMSS`, UTC) lies within a window around the server clock: at most `CURRENT_TIME_MAX_AGE` in the past and `CURRENT_TIME_MAX_AHEAD` in the future. The circuit proves `notBefore <= current_time <= notAfter`; this check is what turns that into "the certificate is valid now". This check cannot be disabled.
 
 `APP_ID` is one 31-character lowercase hex string per relying party, set via env at server startup (e.g. `APP_ID=$(LC_ALL=C tr -dc '0-9a-f' </dev/urandom | head -c 31)`). `challenge` is per-session — a fresh 254-bit decimal field element issued by `/challenge`, bound into the user-sig proof by the prover, and extracted server-side from the proof's public inputs at `/link-verify`. The server looks up the challenge from the proof (normalising hex to decimal if needed) and consumes it on success.
 
@@ -121,12 +124,14 @@ Success body (200):
     "app_id": "<31-char UTF-8 string>",
     "challenge": "<decimal>",
     "issuer_rsa_modulus": ["...", "..."],
-    "smt_root": "0x..."
+    "smt_root": "0x...",
+    "current_time": "0x..."
   },
   "smt_root":       { "issuer": "g2", "match": true, "expected": "0x…", "observed": "0x…", "trust_source": "onchain",  "trusted_at": "…" },
   "issuer_modulus": { "issuer": "g2", "match": true, "expected_sha256": "0xc4c4…", "trust_source": "embedded", "trusted_at": "…" },
   "app_id":         { "match": true, "expected": "<APP_ID env>", "observed": "<proof app_id>" },
-  "challenge":      { "match": true, "expected": "<decimal>", "observed": "<decimal>" }
+  "challenge":      { "match": true, "expected": "<decimal>", "observed": "<decimal>" },
+  "current_time":   { "match": true, "observed": "…", "earliest": "…", "latest": "…" }
 }
 ```
 
@@ -143,6 +148,7 @@ The `smt_root`, `issuer_modulus`, and `app_id` blocks are each present whenever 
 | `409` | `reason="smt_root_mismatch"` | Prover's `smt_root` disagrees with the trusted root — stale client. |
 | `409` | `reason="issuer_modulus_mismatch"` | Prover's issuer modulus doesn't match MOICA-G2/G3 — wrong-issuer proof. |
 | `409` | `reason="app_id_mismatch"` | The proof's `app_id` doesn't match the server's configured `APP_ID` — proof was minted for a different application. |
+| `409` | `reason="current_time_out_of_range"` | The cert-chain proof's `current_time` is outside the window around the server clock — stale proof or wrong client clock. |
 | `409` | Duplicate nullifier. | Same `nullifier` already verified. Response echoes `nullifier`. |
 | `410` | Challenge already consumed. |  |
 | `503` | Trust-anchor provider unavailable. | SMT root or issuer cert not cached — transient; retry. |
@@ -194,7 +200,7 @@ cp .env.example .env
 
 ## gRPC API
 
-`proto/zkid/v1/zkid.proto` defines `ZkIDVerifier` with the same verify semantics as HTTP (including `smt_root_mismatch`, `issuer_modulus_mismatch`, and `app_id_mismatch` fail modes). Messages up to 2 MB. Regenerate with `make proto`.
+`proto/zkid/v1/zkid.proto` defines `ZkIDVerifier` with the same verify semantics as HTTP (including `smt_root_mismatch`, `issuer_modulus_mismatch`, `app_id_mismatch` and `current_time_out_of_range` fail modes; the `current_time` outcome block is HTTP-only for now). Messages up to 2 MB. Regenerate with `make proto`.
 
 ## Configuration
 
@@ -220,6 +226,8 @@ All via environment variables.
 | `ISSUER_CERT_G3_URL` | `https://moica.nat.gov.tw/repository/Certs/MOICA-G3.cer` | MOICA-G3 source (override for tests) |
 | `ISSUER_CERT_REFRESH_INTERVAL` | `24h` | Issuer-cert refresh cadence |
 | `ISSUER_CERT_FETCH_TIMEOUT` | `10s` | Per-source fetch timeout |
+| `CURRENT_TIME_MAX_AGE` | `10m` | How far in the past the proof's `current_time` may be. A certificate that expired less than this long ago can still pass; keep it near the challenge TTL. |
+| `CURRENT_TIME_MAX_AHEAD` | `24h` | How far in the future the proof's `current_time` may be. Only makes the proof stricter about expiry, so a prover may use e.g. the end of the current day. |
 | `DEBUG_TOKEN` | _(unset)_ | When set, exposes `POST /debug/db/clean`. Requests must carry `Authorization: Bearer <DEBUG_TOKEN>`. Leave unset in production. |
 
 ### Trust anchors

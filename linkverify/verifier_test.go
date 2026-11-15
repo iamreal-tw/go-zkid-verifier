@@ -3,6 +3,7 @@ package linkverify
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/privacy-ethereum/go-zkid-verifier/issuercert"
 	"github.com/privacy-ethereum/go-zkid-verifier/smtroot"
@@ -234,5 +235,69 @@ func TestCheckIssuerModulus_LimbCountMismatch(t *testing.T) {
 
 	if _, err := checkIssuerModulus(ProofTypeRS2048, parsed, provider, noopLogger{}); err == nil {
 		t.Fatal("expected error on limb count mismatch")
+	}
+}
+
+// fixedNow pins the verifier clock to 2026-11-14 12:00:00 UTC.
+func fixedNow() time.Time { return time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC) }
+
+func TestCheckCurrentTime(t *testing.T) {
+	v := &Verifier{Logger: noopLogger{}, Now: fixedNow}
+	cases := []struct {
+		name        string
+		currentTime string
+		match       bool
+	}{
+		{"exactly now", "261114120000", true},
+		{"end of the day", "261114155959", true},
+		{"oldest accepted", "261114115000", true},
+		{"one second too old", "261114114959", false},
+		{"yesterday", "261113155959", false},
+		{"latest accepted", "261115120000", true},
+		{"one second too far ahead", "261115120001", false},
+		{"hex encoded", "0x3ccb9dd3b7", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			outcome, err := v.checkCurrentTime(&verifier.ParsedInputs{CurrentTime: tc.currentTime})
+			if err != nil {
+				t.Fatalf("checkCurrentTime: %v", err)
+			}
+			if outcome.Match != tc.match {
+				t.Fatalf("Match = %v, want %v (%+v)", outcome.Match, tc.match, outcome)
+			}
+		})
+	}
+}
+
+func TestCheckCurrentTime_CustomWindow(t *testing.T) {
+	v := &Verifier{
+		Logger:              noopLogger{},
+		Now:                 fixedNow,
+		CurrentTimeMaxAge:   time.Minute,
+		CurrentTimeMaxAhead: time.Minute,
+	}
+	for in, want := range map[string]bool{
+		"261114115900": true,
+		"261114115859": false,
+		"261114120100": true,
+		"261114120101": false,
+	} {
+		outcome, err := v.checkCurrentTime(&verifier.ParsedInputs{CurrentTime: in})
+		if err != nil {
+			t.Fatalf("checkCurrentTime(%s): %v", in, err)
+		}
+		if outcome.Match != want {
+			t.Errorf("%s: Match = %v, want %v", in, outcome.Match, want)
+		}
+	}
+}
+
+func TestCheckCurrentTime_Malformed(t *testing.T) {
+	v := &Verifier{Logger: noopLogger{}, Now: fixedNow}
+	for _, in := range []string{"", "261314155959", "0xzz"} {
+		if _, err := v.checkCurrentTime(&verifier.ParsedInputs{CurrentTime: in}); err == nil {
+			t.Errorf("checkCurrentTime(%q): expected error", in)
+		}
 	}
 }

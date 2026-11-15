@@ -16,6 +16,7 @@ type VerifySuccessResponse struct {
 	IssuerModulus *linkverify.IssuerModulusOutcome `json:"issuer_modulus,omitempty"`
 	AppID         *linkverify.AppIDOutcome         `json:"app_id,omitempty"`
 	Challenge     *linkverify.ChallengeOutcome     `json:"challenge,omitempty"`
+	CurrentTime   *linkverify.CurrentTimeOutcome   `json:"current_time,omitempty"`
 }
 
 type VerifyFailResponse struct {
@@ -25,6 +26,7 @@ type VerifyFailResponse struct {
 	IssuerModulus *linkverify.IssuerModulusOutcome `json:"issuer_modulus,omitempty"`
 	AppID         *linkverify.AppIDOutcome         `json:"app_id,omitempty"`
 	Challenge     *linkverify.ChallengeOutcome     `json:"challenge,omitempty"`
+	CurrentTime   *linkverify.CurrentTimeOutcome   `json:"current_time,omitempty"`
 }
 
 type LinkVerifyRequest struct {

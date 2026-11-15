@@ -5,11 +5,17 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/privacy-ethereum/go-zkid-verifier/smtroot"
 	"github.com/privacy-ethereum/go-zkid-verifier/store"
 	"github.com/privacy-ethereum/go-zkid-verifier/verifier"
 )
+
+// The committed fixtures were proved with currentTime = 261114155959
+// (zkid-input-builder's DEFAULT_CURRENT_TIME). fixtureNow puts the verifier
+// clock a few hours before it.
+func fixtureNow() time.Time { return time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC) }
 
 func resolveKeysDir(t *testing.T) string {
 	t.Helper()
@@ -176,7 +182,7 @@ func TestVerifier_SmtRootEnforcement(t *testing.T) {
 	matchingProvider := smtroot.NewStaticProvider(map[smtroot.IssuerID]smtroot.Root{
 		smtroot.IssuerG2: fixtureRoot,
 	})
-	v := &Verifier{KeysDir: absKeysDir, SmtRoot: matchingProvider, Logger: smtroot.DefaultLogger{}}
+	v := &Verifier{KeysDir: absKeysDir, SmtRoot: matchingProvider, Logger: smtroot.DefaultLogger{}, Now: fixtureNow}
 	result, err := v.Verify(req)
 	if err != nil {
 		t.Fatalf("Verify with matching provider: %v", err)
@@ -195,7 +201,7 @@ func TestVerifier_SmtRootEnforcement(t *testing.T) {
 	wrongProvider := smtroot.NewStaticProvider(map[smtroot.IssuerID]smtroot.Root{
 		smtroot.IssuerG2: wrongRoot,
 	})
-	v2 := &Verifier{KeysDir: absKeysDir, SmtRoot: wrongProvider, Logger: smtroot.DefaultLogger{}}
+	v2 := &Verifier{KeysDir: absKeysDir, SmtRoot: wrongProvider, Logger: smtroot.DefaultLogger{}, Now: fixtureNow}
 	result2, err := v2.Verify(req)
 	if err != nil {
 		t.Fatalf("Verify with wrong provider: %v", err)
@@ -228,7 +234,7 @@ func TestVerifier_NilProviderPassthrough(t *testing.T) {
 	ccProof, _ := os.ReadFile(filepath.Join(artifactsDir, "cert_chain_rs2048_proof.bin"))
 	usProof, _ := os.ReadFile(filepath.Join(artifactsDir, "user_sig_rs2048_proof.bin"))
 
-	v := &Verifier{KeysDir: absKeysDir, Logger: smtroot.DefaultLogger{}}
+	v := &Verifier{KeysDir: absKeysDir, Logger: smtroot.DefaultLogger{}, Now: fixtureNow}
 	result, err := v.Verify(Request{
 		CertChainProof: ccProof,
 		UserSigProof:   usProof,
@@ -274,7 +280,7 @@ func TestServiceChallenge_RealProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePublicInputs: %v", err)
 	}
-	v := &Verifier{KeysDir: keysDir, Logger: smtroot.DefaultLogger{}}
+	v := &Verifier{KeysDir: keysDir, Logger: smtroot.DefaultLogger{}, Now: fixtureNow}
 
 	t.Run("match", func(t *testing.T) {
 		key, err := verifier.NormalizeDecimal(parsed.Challenge)
@@ -307,6 +313,56 @@ func TestServiceChallenge_RealProof(t *testing.T) {
 			t.Fatalf("expected ErrChallengeNotFound, got %v", err)
 		}
 	})
+}
+
+// The same valid proof must be rejected once the verifier clock has moved past
+// the window around the proof's currentTime.
+func TestVerifier_CurrentTimeEnforcement(t *testing.T) {
+	keysDir := resolveKeysDir(t)
+	if keysDir == "" {
+		t.Skip("verifying keys not found; set KEYS_DIR or run make download-keys")
+	}
+	artifactsDir := filepath.Join("..", "tests", "artifacts", "cc2048_us2048")
+	ccProof, err := os.ReadFile(filepath.Join(artifactsDir, "cert_chain_rs2048_proof.bin"))
+	if err != nil {
+		t.Fatalf("read cert_chain proof: %v", err)
+	}
+	usProof, err := os.ReadFile(filepath.Join(artifactsDir, "user_sig_rs2048_proof.bin"))
+	if err != nil {
+		t.Fatalf("read user_sig proof: %v", err)
+	}
+	req := Request{CertChainProof: ccProof, UserSigProof: usProof, ProofType: ProofTypeRS2048}
+
+	fresh := &Verifier{KeysDir: keysDir, Logger: smtroot.DefaultLogger{}, Now: fixtureNow}
+	res, err := fresh.Verify(req)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !res.Verified || res.CurrentTime == nil || !res.CurrentTime.Match {
+		t.Fatalf("expected Verified with CurrentTime.Match, got reason=%q outcome=%+v", res.Reason, res.CurrentTime)
+	}
+	if want := time.Date(2026, 11, 14, 15, 59, 59, 0, time.UTC); !res.CurrentTime.Observed.Equal(want) {
+		t.Errorf("Observed = %s, want %s", res.CurrentTime.Observed, want)
+	}
+
+	for name, now := range map[string]time.Time{
+		"a day later":  fixtureNow().Add(24 * time.Hour),
+		"a week early": fixtureNow().Add(-7 * 24 * time.Hour),
+	} {
+		t.Run(name, func(t *testing.T) {
+			stale := &Verifier{KeysDir: keysDir, Logger: smtroot.DefaultLogger{}, Now: func() time.Time { return now }}
+			res, err := stale.Verify(req)
+			if err != nil {
+				t.Fatalf("Verify: %v", err)
+			}
+			if res.Verified {
+				t.Fatal("expected Verified=false")
+			}
+			if res.Reason != ReasonCurrentTimeOutOfRange {
+				t.Errorf("Reason = %q, want %q", res.Reason, ReasonCurrentTimeOutOfRange)
+			}
+		})
+	}
 }
 
 func TestParseProofType(t *testing.T) {

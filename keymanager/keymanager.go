@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+// Upstream release. Its cert-chain keys are for the upstream circuit and fail
+// the expectedSHA256 check below: the keys for the validity-check circuit are
+// not published yet. Generate them with `cert-chain setup` from
+// iamreal-tw/zkID at 85b8156 (the setup is deterministic) and place them in
+// KEYS_DIR. The user-sig key is unchanged and still downloads from here.
 const releaseURL = "https://github.com/privacy-ethereum/zkID/releases/download/RSA-X.509-Cert-latest"
 
 // maxKeySize caps decompressed input as a gzip-bomb defense.
@@ -37,8 +42,8 @@ var RequiredKeys = []string{
 // these hashes must be bumped in the same commit, and deployed caches must be
 // cleared (or rely on the verifyFile mismatch path) to pick up the new release.
 var expectedSHA256 = map[string]string{
-	"cert_chain_rs2048_verifying.key": "158fbb3f86d0b767060f3890d3903710fccc9798f360baba584829c969bba00b",
-	"cert_chain_rs4096_verifying.key": "498dc13211a4311900fcbf1df029be109880905d08c4ab271a2f795f4fa1da7c",
+	"cert_chain_rs2048_verifying.key": "0ba468bb63cc095f312e2316ff580481b985a55ef86b6fb0a5498ef061deff41",
+	"cert_chain_rs4096_verifying.key": "3050b9b07dea498faad0184a9032213280a4f5e032434f3cb900917633da3724",
 	"user_sig_rs2048_verifying.key":   "d85d0738827dcdfe13dc5fbf0ce8cddab5cbef3d55e6bf02c9c749190bdc3091",
 }
 

@@ -1,5 +1,7 @@
 # Test fixtures
 
+> **Fork note.** The committed proofs were generated from [iamreal-tw/zkID](https://github.com/iamreal-tw/zkID/tree/validity-check) at `85b8156` with `currentTime = 261114155959` (the input builder's default). The integration tests pin the verifier clock to 2026-11-14 12:00 UTC to match. Substitute that repository and commit for the upstream ones in the steps below; the matching verifying keys are not published, so copy `keys/*_verifying.key` from the setup step into `KEYS_DIR` instead of step 7.
+
 `cc{2048,4096}_us2048/*.bin` are spartan2 proof binaries paired with the verifying keys auto-downloaded by `keymanager` from the [zkID `RSA-X.509-Cert-latest` release](https://github.com/privacy-ethereum/zkID/releases/tag/RSA-X.509-Cert-latest). Whenever the cert-chain or user-sig circuit changes (and the upstream release is rebuilt) the fixtures must be regenerated against the new keys, otherwise integration tests fail loudly with a public-input count mismatch.
 
 ## Regenerating

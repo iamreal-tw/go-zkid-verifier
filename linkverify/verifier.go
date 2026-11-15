@@ -10,12 +10,31 @@ import (
 	"github.com/privacy-ethereum/go-zkid-verifier/verifier"
 )
 
+// Bounds on the cert-chain proof's `currentTime` relative to the verifier's
+// clock. The circuit proves the certificate was valid at `currentTime`; these
+// bounds are what make that mean "valid now".
+//
+// MaxAge is the security-relevant side: a certificate that expired less than
+// MaxAge ago can still pass, so keep it close to the challenge TTL. MaxAhead
+// only makes the proof stricter about expiry (the certificate must stay valid
+// until then), so it can be generous; it lets a prover use a coarse value such
+// as the end of the current day instead of revealing its exact clock.
+const (
+	DefaultCurrentTimeMaxAge   = 10 * time.Minute
+	DefaultCurrentTimeMaxAhead = 24 * time.Hour
+)
+
 type Verifier struct {
-	KeysDir             string
-	SmtRoot             *smtroot.Provider
-	IssuerCert          *issuercert.Provider
+	KeysDir       string
+	SmtRoot       *smtroot.Provider
+	IssuerCert    *issuercert.Provider
 	ExpectedAppID string // 31-char UTF-8 string; compared constant-time against parsed proof
-	Logger              smtroot.Logger
+	Logger        smtroot.Logger
+
+	// The currentTime check always runs; zero values select the defaults.
+	CurrentTimeMaxAge   time.Duration
+	CurrentTimeMaxAhead time.Duration
+	Now                 func() time.Time // nil → time.Now
 }
 
 // Result holds everything the handler needs to respond.
@@ -28,6 +47,16 @@ type Result struct {
 	IssuerModulus *IssuerModulusOutcome
 	AppID         *AppIDOutcome
 	Challenge     *ChallengeOutcome
+	CurrentTime   *CurrentTimeOutcome
+}
+
+// CurrentTimeOutcome reports whether the cert-chain proof's `currentTime`
+// falls inside [Earliest, Latest], the window around the verifier's clock.
+type CurrentTimeOutcome struct {
+	Match    bool      `json:"match"`
+	Observed time.Time `json:"observed"`
+	Earliest time.Time `json:"earliest"`
+	Latest   time.Time `json:"latest"`
 }
 
 // SmtRootOutcome is the outcome of the proof-vs-trusted-root comparison.
@@ -84,13 +113,23 @@ func (v *Verifier) Verify(req Request) (*Result, error) {
 
 	res := &Result{Verified: true, Signals: signals, Parsed: parsed}
 
+	ctOutcome, err := v.checkCurrentTime(parsed)
+	if err != nil {
+		return nil, err
+	}
+	res.CurrentTime = ctOutcome
+	if !ctOutcome.Match {
+		res.Verified = false
+		res.Reason = ReasonCurrentTimeOutOfRange
+	}
+
 	if v.SmtRoot != nil {
 		outcome, err := checkSmtRoot(req.ProofType, parsed, v.SmtRoot, v.Logger)
 		if err != nil {
 			return nil, err
 		}
 		res.SmtRoot = outcome
-		if !outcome.Match {
+		if !outcome.Match && res.Reason == "" {
 			res.Verified = false
 			res.Reason = ReasonSmtRootMismatch
 		}
@@ -145,6 +184,44 @@ func (v *Verifier) CheckChallenge(parsed *verifier.ParsedInputs, expected string
 		"match", outcome.Match,
 	)
 	return outcome
+}
+
+func (v *Verifier) checkCurrentTime(parsed *verifier.ParsedInputs) (*CurrentTimeOutcome, error) {
+	observed, err := verifier.ParseCurrentTime(parsed.CurrentTime)
+	if err != nil {
+		return nil, fmt.Errorf("parse proof current_time: %w", err)
+	}
+	now := time.Now
+	if v.Now != nil {
+		now = v.Now
+	}
+	maxAge, maxAhead := v.CurrentTimeMaxAge, v.CurrentTimeMaxAhead
+	if maxAge <= 0 {
+		maxAge = DefaultCurrentTimeMaxAge
+	}
+	if maxAhead <= 0 {
+		maxAhead = DefaultCurrentTimeMaxAhead
+	}
+	t := now().UTC()
+	outcome := &CurrentTimeOutcome{
+		Observed: observed,
+		Earliest: t.Add(-maxAge),
+		Latest:   t.Add(maxAhead),
+	}
+	outcome.Match = !observed.Before(outcome.Earliest) && !observed.After(outcome.Latest)
+	level, event := "info", "current_time_check"
+	if !outcome.Match {
+		level, event = "warn", "current_time_out_of_range"
+	}
+	if v.Logger != nil {
+		v.Logger.Event(level, event,
+			"observed", outcome.Observed.Format(time.RFC3339),
+			"earliest", outcome.Earliest.Format(time.RFC3339),
+			"latest", outcome.Latest.Format(time.RFC3339),
+			"match", outcome.Match,
+		)
+	}
+	return outcome, nil
 }
 
 func checkSmtRoot(pt ProofType, parsed *verifier.ParsedInputs, provider *smtroot.Provider, logger smtroot.Logger) (*SmtRootOutcome, error) {
